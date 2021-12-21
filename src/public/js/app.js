@@ -87,7 +87,7 @@ socket.on("room_change", (rooms) => {
     roomList.append(li);
   });
 });
-/*
+/* (1) WebSocket 이용한 app.js 
 // WebSocket(브라우저와 서버 사이의 연결) 생성
 const socket = new WebSocket(`ws://${window.location.host}`);
 // html의 선택자들 받아오기
