@@ -3,20 +3,90 @@ const socket = io();
 
 const welcome = document.getElementById("welcome");
 const form = welcome.querySelector("form");
+const room = document.getElementById("room");
 
-function handleRoomSubmit(event) {
+room.hidden = true; // room에 입장하기 전 요소 숨겨주기
+
+let roomName;
+
+function addMessage(message) {
+  const ul = room.querySelector("ul");
+  const li = document.createElement("li");
+  li.innerText = message;
+  ul.appendChild(li);
+}
+
+function handleMessageSubmit(event) {
   event.preventDefault();
-  const input = form.querySelector("input");
-  // emit() 함수를 통해 어떤 event(사용자 정의 event)든지 전송 가능
-  // JS Object를 string형 변환 없이도 전송 가능
-  // emit(${event}, ${object}, ${function})
-  socket.emit("enter_room", { payload: input.value }, () => {
-    console.log("server is done!");
+  const input = room.querySelector("#msg input");
+  const value = input.value;
+  socket.emit("new_message", input.value, roomName, () => {
+    addMessage(`You: ${value}`);
   });
   input.value = "";
 }
 
+function handleNicknameSubmit(event) {
+  event.preventDefault();
+  const input = room.querySelector("#name input");
+  socket.emit("nickname", input.value);
+}
+
+// room에 입장시 weclome 요소를 숨기고 room 요소를 보여주는 함수
+function showRoom() {
+  welcome.hidden = true;
+  room.hidden = false;
+  const h3 = room.querySelector("h3");
+  h3.innerText = `Room ${roomName}`;
+  const msgForm = room.querySelector("#msg");
+  const nameForm = room.querySelector("#name");
+  msgForm.addEventListener("submit", handleMessageSubmit);
+  nameForm.addEventListener("submit", handleNicknameSubmit);
+}
+
+// emit() 함수를 통해 어떤 event(사용자 정의 event)든지 전송 가능
+// JS Object를 string형 변환 없이도 전송 가능
+// emit(${event}, ${object}, ${function})
+// 끝날 떄 실행되는 function을 전송시에는 emit의 arg 리스트중 마지막에 넣어야 함
+function handleRoomSubmit(event) {
+  event.preventDefault();
+  const roomNameInput = form.querySelector("#roomName");
+  const nickNameInput = form.querySelector("#name");
+  socket.emit("enter_room", roomNameInput.value, nickNameInput.value, showRoom);
+  roomName = roomNameInput.value;
+  roomNameInput.value = "";
+  const changeNameInput = room.querySelector("#name input");
+  changeNameInput.value = nickNameInput.value;
+}
+
 form.addEventListener("submit", handleRoomSubmit);
+
+socket.on("welcome", (user, newCount) => {
+  const h3 = room.querySelector("h3");
+  h3.innerText = `Room ${roomName} (${newCount})`;
+  addMessage(`${user} joined! 😊`);
+});
+
+socket.on("bye", (left, newCount) => {
+  const h3 = room.querySelector("h3");
+  h3.innerText = `Room ${roomName} (${newCount})`;
+  addMessage(`${left} left! 😂`);
+});
+
+socket.on("new_message", addMessage);
+const roomList = welcome.querySelector("ul");
+roomList.innerHTML = "";
+// App내 rooms이 하나도 없을시 array를 비워주는 작업
+socket.on("room_change", (rooms) => {
+  if (rooms.length === 0) {
+    return;
+  }
+  rooms.forEach((room) => {
+    const li = document.createElement("li");
+    li.innerText = room;
+    roomList.append(li);
+  });
+});
 /*
 // WebSocket(브라우저와 서버 사이의 연결) 생성
 const socket = new WebSocket(`ws://${window.location.host}`);

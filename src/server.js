@@ -1,7 +1,8 @@
 import express from "express";
 import http from "http";
 // import WebSocket from "ws";
-import SocketIO from "socket.io";
+import { Server } from "socket.io";
+import { instrument } from "@socket.io/admin-ui";
 
 const app = express();
 
@@ -18,17 +19,63 @@ app.get("/*", (req, res) => res.redirect("/"));
 
 // http 패키지를 이용한 express application 서버 구축(http 서버)
 const httpServer = http.createServer(app);
-
 // SecketIo 패키지를 이용한 io 서버 구축
-const wsServer = SocketIO(httpServer);
+const wsServer = new Server(httpServer, {
+  cors: {
+    origin: ["https://admin.socket.io"],
+    credentials: true,
+  },
+});
+
+instrument(wsServer, {
+  auth: false,
+});
+
+// adapter의 get() 함수와 조건문을 통해서 sid의 key와 rooms의 key가
+// 일치하지 않는 key(public rooms)를 찾아 publicRooms 배열에 저장 후 반환
+// sid의 key와 rooms의 key가 같은 경우는 privateRooms임.(클라이언트 고유sid?)
+function publicRooms() {
+  const sids = wsServer.sockets.adapter.sids;
+  const rooms = wsServer.sockets.adapter.rooms;
+  const publicRooms = [];
+  rooms.forEach((_, key) => {
+    if (sids.get(key) === undefined) {
+      publicRooms.push(key);
+    }
+  });
+  return publicRooms;
+}
+
+// rooms에 접속한 인원의 수를 세주는 함수
+function countRoom(roomName) {
+  return wsServer.sockets.adapter.rooms.get(roomName)?.size;
+}
 
 wsServer.on("connection", (socket) => {
-  socket.on("enter_room", (msg, done) => {
-    console.log(msg);
-    setTimeout(() => {
-      done();
-    }, 10000);
+  socket["nickname"] = "Annonymous";
+  socket.onAny((event) => {
+    console.log(`Socket Event: ${event}`);
   });
+  socket.on("enter_room", (roomName, nickname, done) => {
+    socket["nickname"] = nickname;
+    socket.join(roomName); // room_name으로 입장
+    done();
+    socket.to(roomName).emit("welcome", socket.nickname, countRoom(roomName));
+    wsServer.sockets.emit("room_change", publicRooms());
+  });
+  socket.on("disconnecting", () => {
+    socket.rooms.forEach((room) =>
+      socket.to(room).emit("bye", socket.nickname, countRoom(room) - 1)
+    );
+  });
+  socket.on("disconnect", () => {
+    wsServer.sockets.emit("room_change", publicRooms());
+  });
+  socket.on("new_message", (msg, room, done) => {
+    socket.to(room).emit("new_message", `${socket.nickname}: ${msg}`);
+    done();
+  });
+  socket.on("nickname", (nickname) => (socket["nickname"] = nickname));
 });
 
 /*
